@@ -21,7 +21,7 @@ func main() {
 
 	token := os.Getenv("GITHUB_AUTH_TOKEN")
 	if token == "" {
-		token = "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"
+		log.Fatal("missing GITHUB_AUTH_TOKEN")
 	}
 
 	dir, err := os.Getwd()
