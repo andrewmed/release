@@ -10,11 +10,12 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/go-github/v53/github"
 )
 
 const upstream = "origin"
+const teamcityTpl = `https://teamcity.propellerdev.com/searchResults.html?query=revision%%3A%s&buildTypeId=&byTime=true`
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -23,6 +24,9 @@ func main() {
 	if token == "" {
 		log.Fatal("missing GITHUB_AUTH_TOKEN")
 	}
+
+	ctx := context.Background()
+	client := github.NewTokenClient(ctx, token)
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -57,13 +61,7 @@ func main() {
 	fmt.Printf("remote: %s\n", url)
 	owner, name := parseRemote(url)
 
-	ctx := context.Background()
-	client := github.NewTokenClient(ctx, token)
-
-	releases, _, err := client.Repositories.ListReleases(ctx, owner, name, &github.ListOptions{
-		Page:    0,
-		PerPage: 0,
-	})
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, name, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,8 +70,31 @@ func main() {
 		last = *releases[0].TagName
 	}
 
-	fmt.Printf("last release: %s\n", last)
-	fmt.Printf("Enter new tag:")
+	// check staleness
+	err = repo.Fetch(&git.FetchOptions{
+		RemoteName:      "",
+		RemoteURL:       "",
+		RefSpecs:        nil,
+		Depth:           1,
+		Auth:            nil,
+		Progress:        nil,
+		Tags:            0,
+		Force:           false,
+		InsecureSkipTLS: false,
+		CABundle:        nil,
+		ProxyOptions:    transport.ProxyOptions{},
+	})
+	lastCommitLocal := lastCommit(err, repo, false)
+	hash := lastCommitLocal.Hash.String()
+	msg := strings.Split(lastCommitLocal.Message, "\n")[0]
+
+	fmt.Printf("last tag: %s\n", last)
+
+	if lastCommitGlobal := lastCommit(err, repo, true); hash != lastCommitGlobal.Hash.String() {
+		fmt.Println("WARN: LOCAL HEAD IS BEHIND REMOTE BRANCH !!!!")
+	}
+
+	fmt.Printf("enter new tag:")
 	reader := bufio.NewReader(os.Stdin)
 	tag, err := reader.ReadString('\n')
 	if err != nil {
@@ -82,34 +103,20 @@ func main() {
 	tag = strings.TrimSpace(tag)
 	fmt.Println()
 
-	logs, err := repo.Log(&git.LogOptions{
-		From:       plumbing.Hash{},
-		Order:      0,
-		FileName:   nil,
-		PathFilter: nil,
-		All:        false,
-		Since:      nil,
-		Until:      nil,
-	})
-	if err != nil {
-		log.Fatal(err)
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		log.Fatalf("error fetching: %s", err)
 	}
-	commit, err := logs.Next()
-	if err != nil {
-		log.Fatal(err)
-	}
-	hash := commit.Hash.String()
-	msg := strings.Split(commit.Message, "\n")[0]
 
-	fmt.Println("============================")
+	fmt.Println("===========================")
 	fmt.Printf("creating release: %s\n", tag)
 	fmt.Printf("with title: %s\n", msg)
-	fmt.Printf("commit: %s\n", hash)
+	fmt.Printf("last commit: %s\n", hash)
+
 	fmt.Printf("hit any key to proceed...")
 	reader.ReadByte()
 	fmt.Println()
 
-	rc := strings.HasSuffix(tag, "-rc")
+	rc := strings.Contains(tag, "-rc")
 	latest := "true"
 	if rc {
 		latest = "false"
@@ -148,4 +155,5 @@ func main() {
 	}
 
 	fmt.Printf("created release: %s\n", *release.HTMLURL)
+	fmt.Printf(teamcityTpl, hash)
 }
