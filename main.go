@@ -65,9 +65,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	last := "none"
+	lastTag := "none"
+	lastMsg := "none"
 	if len(releases) > 0 {
-		last = *releases[0].TagName
+		lastTag = *releases[0].TagName
+		lastMsg = *releases[0].Name
 	}
 
 	// check staleness
@@ -88,7 +90,8 @@ func main() {
 	hash := lastCommitLocal.Hash.String()
 	msg := strings.Split(lastCommitLocal.Message, "\n")[0]
 
-	fmt.Printf("last tag: %s\n", last)
+	fmt.Printf("last tag: %s\n", lastTag)
+	fmt.Printf("last msg: %s\n", lastMsg)
 
 	if lastCommitGlobal := lastCommit(err, repo, true); hash != lastCommitGlobal.Hash.String() {
 		fmt.Println("WARN: LOCAL HEAD IS BEHIND REMOTE BRANCH !!!!")
