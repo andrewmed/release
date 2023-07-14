@@ -17,6 +17,10 @@ import (
 const upstream = "origin"
 const teamcityTpl = `https://teamcity.propellerdev.com/searchResults.html?query=revision%%3A%s&buildTypeId=&byTime=true`
 
+var skipped = [...]string{
+	"merge",
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -88,7 +92,26 @@ func main() {
 	})
 	lastCommitLocal := lastCommit(err, repo, false)
 	hash := lastCommitLocal.Hash.String()
-	msg := strings.Split(lastCommitLocal.Message, "\n")[0]
+	msgs := strings.Split(lastCommitLocal.Message, "\n")
+	var msg string
+
+top:
+	for _, m := range msgs {
+		normalized := strings.ToLower(strings.TrimSpace(m))
+		if normalized == "" {
+			continue
+		}
+		for _, s := range skipped {
+			if strings.HasPrefix(normalized, s) {
+				continue top
+			}
+		}
+		msg = m
+		break
+	}
+	if msg == "" {
+		msg = msgs[0]
+	}
 
 	fmt.Printf("last tag: %s\n", lastTag)
 	fmt.Printf("last msg: %s\n", lastMsg)
